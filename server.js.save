@@ -1,0 +1,230 @@
+c
+
+
+
+
+onst express = require("express");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const pool = require("./src/config/db");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.json({ message: "Moe Transfer API is running 🚀" });
+});
+
+app.post("/api/auth/register", async (req, res) => {
+  const { name, email, password } = req.body;
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const result = await pool.query(
+    "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email",
+    [name, email, hashedPassword]
+  );
+
+  res.json({
+    message: "User registered successfully ✅",
+    user: result.rows[0],
+  });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  const result = await pool.query(
+    "SELECT * FROM users WHERE email = $1",
+    [email]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(401).json({
+      message: "Invalid email or password",
+    });
+  }
+
+  const user = result.rows[0];
+
+  const isMatch = await bcrypt.compare(password, user.password);
+
+  if (!isMatch) {
+    return res.status(401).json({
+      message: "Invalid email or password",
+    });
+  }
+
+  const token = jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+    },
+    "moe_transfer_secret",
+    {
+      expiresIn: "7d",
+    }
+  );
+
+  res.json({
+    message: "Login successful ✅",
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    },
+  });
+});
+
+app.post("/api/wallet/create/:userId", async (req, res) => {
+  const { userId } = req.params;
+
+  const existingWallet = await pool.query(
+    "SELECT * FROM wallets WHERE user_id = $1",
+    [userId]
+  );
+
+  if (existingWallet.rows.length > 0) {
+    return res.json({
+      message: "Wallet already exists ✅",
+      wallet: existingWallet.rows[0],
+    });
+  }
+
+  const newWallet = await pool.query(
+    "INSERT INTO wallets (user_id, balance, currency) VALUES ($1, $2, $3) RETURNING *",
+    [userId, 1000, "EUR"]
+  );
+
+  res.json({
+    message: "Wallet created successfully ✅",
+    wallet: newWallet.rows[0],
+  });
+});
+
+app.get("/api/wallet/:userId", async (req, res) => {
+  const { userId } = req.params;
+
+  const result = await pool.query(
+    "SELECT * FROM wallets WHERE user_id = $1",
+    [userId]
+  );
+
+  res.json({
+    message: "Wallet fetched successfully ✅",
+    wallet: result.rows[0] || null,
+  });
+});
+
+app.post("/api/transfer", async (req, res) => {
+  const { senderId, receiverId, amount } = req.body;
+
+  const senderWallet = await pool.query(
+    "SELECT * FROM wallets WHERE user_id = $1",
+    [senderId]
+  );
+
+  const receiverWallet = await pool.query(
+    "SELECT * FROM wallets WHERE user_id = $1",
+    [receiverId]
+  );
+
+  if (
+    senderWallet.rows.length === 0 ||
+    receiverWallet.rows.length === 0
+  ) {
+    return res.status(404).json({
+      message: "Wallet not found",
+    });
+  }
+
+  const senderBalance = parseFloat(senderWallet.rows[0].balance);
+
+  if (senderBalance < amount) {
+    return res.status(400).json({
+      message: "Insufficient balance",
+    });
+  }
+
+  await pool.query(
+    "UPDATE wallets SET balance = balance - $1 WHERE user_id = $2",
+    [amount, senderId]
+  );
+
+  await pool.query(
+    "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
+    [amount, receiverId]
+  );
+
+  const transaction = await pool.query(
+    "INSERT INTO transactions (sender_id, receiver_id, amount) VALUES ($1, $2, $3) RETURNING *",
+    [senderId, receiverId, amount]
+app.post("/api/transfer", async (req, res) => {
+  try {
+    const { senderId, receiverId, amount } = req.body;
+
+    // Get sender wallet
+    const senderWallet = await pool.query(
+      "SELECT * FROM wallets WHERE user_id = $1",
+      [senderId]
+    );
+
+    // Get receiver wallet
+    const receiverWallet = await pool.query(
+      "SELECT * FROM wallets WHERE user_id = $1",
+      [receiverId]
+    );
+
+    if (!senderWallet.rows[0] || !receiverWallet.rows[0]) {
+      return res.status(404).json({
+        message: "Wallet not found"
+      });
+    }
+
+    const senderBalance = parseFloat(senderWallet.rows[0].balance);
+
+    // Check balance
+    if (senderBalance < amount) {
+      return res.status(400).json({
+        message: "Insufficient balance"
+      });
+    }
+
+    // Deduct sender balance
+    await pool.query(
+      "UPDATE wallets SET balance = balance - $1 WHERE user_id = $2",
+      [amount, senderId]
+    );
+
+    // Add receiver balance
+    await pool.query(
+      "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
+      [amount, receiverId]
+    );
+
+    // Save transaction
+    const transaction = await pool.query(
+  `INSERT INTO transactions 
+  (sender_id, receiver_id, amount) 
+  VALUES ($1, $2, $3)
+  RETURNING *`,
+  [senderId, receiverId, amount]
+);
+    res.json({
+      message: "Transfer successful ✅",
+      transaction: transaction.rows[0]
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+});
+app.listen(4000, () => {
+  console.log("Moe Transfer server running on port 4000");
+});
