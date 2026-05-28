@@ -2,86 +2,92 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const { Pool } = require("pg");
+const Stripe = require("stripe");
 
 const app = express();
+const PORT = 4000;
 
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 10000;
-const JWT_SECRET = process.env.JWT_SECRET || "moe_transfer_secret";
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
 });
 
-pool
-  .connect()
+pool.connect()
   .then(() => console.log("PostgreSQL Connected ✅"))
-  .catch((err) => console.error("PostgreSQL Error:", err));
+  .catch((err) => console.log("PostgreSQL Error:", err));
 
-app.get("/", (req, res) => {
-  res.send("Moe Transfer Backend Running ✅");
-});
+async function setupTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      name TEXT,
+      username TEXT,
+      email TEXT UNIQUE,
+      password TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-function auth(req, res, next) {
-  const header = req.headers.authorization;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transfers (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT,
+      receiver_name TEXT,
+      bank_name TEXT,
+      account_number TEXT,
+      country TEXT,
+      amount TEXT,
+      received TEXT,
+      symbol TEXT,
+      reference TEXT,
+      status TEXT,
+      date TEXT,
+      time TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-  if (!header) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-
-  const token = header.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch {
-    return res.status(401).json({ message: "Invalid token" });
-  }
+  console.log("Users table ready ✅");
+  console.log("Transfers table ready ✅");
 }
 
-app.post("/register", async (req, res) => {
-  try {
-    const { email, password } = req.body;
+setupTables();
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
+app.get("/", (req, res) => {
+  res.send("Moe Transfer backend running 🚀");
+});
+
+app.post("/signup", async (req, res) => {
+  try {
+    const { name, username, email, password } = req.body;
+    const finalName = name || username;
+
+    if (!finalName || !email || !password) {
+      return res.status(400).json({ error: "All fields required" });
     }
 
-    const existingUser = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
-    );
+    const existingUser = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
 
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ error: "User already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await pool.query(
-      "INSERT INTO users (email, password, balance) VALUES ($1, $2, $3) RETURNING id, email, balance",
-      [email, hashedPassword, 1000]
+    const result = await pool.query(
+      `INSERT INTO users (name, username, email, password)
+       VALUES ($1,$2,$3,$4)
+       RETURNING id, name, username, email`,
+      [finalName, finalName, email, password]
     );
 
-    await pool.query(
-      "INSERT INTO wallets (user_id, balance) VALUES ($1, $2)",
-      [user.rows[0].id, 1000]
-    );
-
-    res.json({
-      message: "Registration successful ✅",
-      user: user.rows[0],
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Registration failed" });
+    res.json({ success: true, token: "demo-token", user: result.rows[0] });
+  } catch (error) {
+    console.log("Signup error:", error);
+    res.status(500).json({ error: "Signup failed" });
   }
 });
 
@@ -89,106 +95,101 @@ app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
-    ]);
-
-    if (user.rows.length === 0) {
-      return res.status(400).json({ message: "User not found" });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.rows[0].password);
-
-    if (!validPassword) {
-      return res.status(400).json({ message: "Wrong password" });
-    }
-
-    const token = jwt.sign(
-      { id: user.rows[0].id, email: user.rows[0].email },
-      JWT_SECRET,
-      { expiresIn: "7d" }
+    const result = await pool.query(
+      "SELECT id, name, username, email FROM users WHERE email=$1 AND password=$2",
+      [email, password]
     );
 
-    res.json({
-      message: "Login successful ✅",
-      token,
-      user: {
-        id: user.rows[0].id,
-        email: user.rows[0].email,
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    res.json({ success: true, token: "demo-token", user: result.rows[0] });
+  } catch (error) {
+    console.log("Login error:", error);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100),
+      currency: "eur",
+      automatic_payment_methods: {
+        enabled: true,
       },
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Login failed" });
+
+    res.json({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.log("Stripe error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get("/dashboard", auth, async (req, res) => {
+app.post("/transfers", async (req, res) => {
   try {
-    const wallet = await pool.query(
-      "SELECT balance FROM wallets WHERE user_id = $1",
-      [req.user.id]
+    const {
+      userEmail,
+      receiverName,
+      bankName,
+      accountNumber,
+      country,
+      amount,
+      received,
+      symbol,
+      reference,
+      status,
+      date,
+      time,
+    } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO transfers (
+        user_email, receiver_name, bank_name, account_number,
+        country, amount, received, symbol, reference, status, date, time
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING *`,
+      [
+        userEmail,
+        receiverName,
+        bankName,
+        accountNumber,
+        country,
+        amount,
+        received,
+        symbol,
+        reference,
+        status,
+        date,
+        time,
+      ]
     );
 
-    const transactions = await pool.query(
-      "SELECT * FROM transactions WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at DESC",
-      [req.user.id]
-    );
-
-    res.json({
-      balance: wallet.rows[0]?.balance || 0,
-      transactions: transactions.rows,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Dashboard failed" });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.log("Save transfer error:", error);
+    res.status(500).json({ error: "Transfer failed" });
   }
 });
 
-app.post("/transfer", auth, async (req, res) => {
+app.get("/transfers", async (req, res) => {
   try {
-    const { receiverId, amount } = req.body;
-    const sendAmount = Number(amount);
-
-    if (!receiverId || !sendAmount || sendAmount <= 0) {
-      return res.status(400).json({ message: "Invalid transfer" });
-    }
-
-    const senderWallet = await pool.query(
-      "SELECT balance FROM wallets WHERE user_id = $1",
-      [req.user.id]
-    );
-
-    if (senderWallet.rows.length === 0) {
-      return res.status(400).json({ message: "Sender wallet not found" });
-    }
-
-    if (Number(senderWallet.rows[0].balance) < sendAmount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    await pool.query("UPDATE wallets SET balance = balance - $1 WHERE user_id = $2", [
-      sendAmount,
-      req.user.id,
-    ]);
-
-    await pool.query("UPDATE wallets SET balance = balance + $1 WHERE user_id = $2", [
-      sendAmount,
-      receiverId,
-    ]);
-
-    await pool.query(
-      "INSERT INTO transactions (sender_id, receiver_id, amount) VALUES ($1, $2, $3)",
-      [req.user.id, receiverId, sendAmount]
-    );
-
-    res.json({ message: "Transfer successful ✅" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Transfer failed" });
+    const result = await pool.query("SELECT * FROM transfers ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch transfers" });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Moe Transfer server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} 🚀`);
 });
