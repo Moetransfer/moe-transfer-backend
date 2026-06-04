@@ -76,8 +76,20 @@ async function setupTables() {
     )
   `);
 
+await pool.query(`
+CREATE TABLE IF NOT EXISTS recipients (
+    id SERIAL PRIMARY KEY,
+    user_email TEXT,
+    recipient_name TEXT,
+    bank_name TEXT,
+    account_number TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+`);
+
   console.log("Users table ready ✅");
   console.log("Transfers table ready ✅");
+  console.log("Recipients table ready ✅");
 }
 
 setupTables();
@@ -267,6 +279,38 @@ app.post("/create-checkout-session", async (req, res) => {
   } catch (error) {
     console.error("Stripe checkout error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+app.get("/recipients", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM recipients WHERE user_email=$1 ORDER BY id DESC",
+      [req.user.email]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.log("Fetch recipients error:", error);
+    res.status(500).json({ error: "Failed to fetch recipients" });
+  }
+});
+
+app.post("/recipients", auth, async (req, res) => {
+  try {
+    const { recipientName, bankName, accountNumber } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO recipients
+      (user_email, recipient_name, bank_name, account_number)
+      VALUES ($1,$2,$3,$4)
+      RETURNING *`,
+      [req.user.email, recipientName, bankName, accountNumber]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.log("Save recipient error:", error);
+    res.status(500).json({ error: "Failed to save recipient" });
   }
 });
 app.listen(PORT, () => {
