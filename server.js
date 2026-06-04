@@ -24,13 +24,21 @@ const auth = (req, res, next) => {
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET || "moe_transfer_secret"
-    );
+     };
 
     req.user = decoded;
     next();
   } catch (err) {
     return res.status(401).json({ error: "Invalid token" });
   }
+};
+
+const adminOnly = (req, res, next) => {
+  if (req.user.email !== "djmoe20@yahoo.com") {
+    return res.status(403).json({ error: "Admin only" });
+  }
+
+  next();
 };
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
@@ -311,6 +319,29 @@ app.post("/recipients", auth, async (req, res) => {
   } catch (error) {
     console.log("Save recipient error:", error);
     res.status(500).json({ error: "Failed to save recipient" });
+  }
+});
+
+app.get("/admin/stats", auth, adminOnly, async (req, res) => {
+  try {
+    const users = await pool.query("SELECT COUNT(*) FROM users");
+    const transfers = await pool.query("SELECT COUNT(*) FROM transfers");
+
+    res.json({
+      users: users.rows[0].count,
+      transfers: transfers.rows[0].count,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to load admin stats" });
+  }
+});
+
+app.get("/admin/transfers", auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM transfers ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to load admin transfers" });
   }
 });
 app.listen(PORT, () => {
