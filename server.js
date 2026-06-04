@@ -13,6 +13,26 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+const auth = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ error: "No token provided" });
+  }
+
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "moe_transfer_secret"
+    );
+
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+};
+
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
