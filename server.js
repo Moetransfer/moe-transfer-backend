@@ -4,6 +4,8 @@ const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -86,7 +88,17 @@ app.post("/signup", async (req, res) => {
       [finalName, finalName, email, password]
     );
 
-    res.json({ success: true, token: "demo-token", user: result.rows[0] });
+    const token = jwt.sign(
+  { email: result.rows[0].email },
+  process.env.JWT_SECRET || "moe_transfer_secret",
+  { expiresIn: "7d" }
+);
+
+res.json({
+  success: true,
+  token,
+  user: result.rows[0]
+});
   } catch (error) {
     console.log("Signup error:", error);
     res.status(500).json({ error: "Signup failed" });
@@ -106,7 +118,17 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    res.json({ success: true, token: "demo-token", user: result.rows[0] });
+    const token = jwt.sign(
+  { email: result.rows[0].email },
+  process.env.JWT_SECRET || "moe_transfer_secret",
+  { expiresIn: "7d" }
+);
+
+res.json({
+  success: true,
+  token,
+  user: result.rows[0]
+});
   } catch (error) {
     console.log("Login error:", error);
     res.status(500).json({ error: "Login failed" });
