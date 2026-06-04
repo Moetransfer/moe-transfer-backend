@@ -192,6 +192,35 @@ app.get("/transfers", async (req, res) => {
   }
 });
 
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const { amount, recipient } = req.body;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            product_data: {
+              name: `Moe Transfer to ${recipient || "recipient"}`,
+            },
+            unit_amount: Math.round(Number(amount) * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: "https://moe-transfer-frontend.onrender.com",
+      cancel_url: "https://moe-transfer-frontend.onrender.com",
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error("Stripe checkout error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} 🚀`);
 });
