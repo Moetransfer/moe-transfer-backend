@@ -24,7 +24,7 @@ const auth = (req, res, next) => {
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET || "moe_transfer_secret"
-     };
+    );
 
     req.user = decoded;
     next();
