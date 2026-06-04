@@ -197,23 +197,25 @@ app.post("/create-checkout-session", async (req, res) => {
     const { amount, recipient } = req.body;
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "eur",
-            product_data: {
-              name: `Moe Transfer to ${recipient || "recipient"}`,
-            },
-            unit_amount: Math.round(Number(amount) * 100),
-          },
-          quantity: 1,
+  payment_method_types: ["card"],
+  mode: "payment",
+
+  line_items: [
+    {
+      price_data: {
+        currency: "eur",
+        product_data: {
+          name: `Moe Transfer to ${recipient || "recipient"}`
         },
-      ],
-      success_url: "https://moe-transfer-frontend.onrender.com",
-      cancel_url: "https://moe-transfer-frontend.onrender.com",
-    });
+        unit_amount: Math.round(Number(amount) * 100),
+      },
+      quantity: 1,
+    },
+  ],
+
+  success_url: "https://moe-transfer-frontend.onrender.com?payment=success",
+  cancel_url: "https://moe-transfer-frontend.onrender.com?payment=cancel",
+});
 
     res.json({ url: session.url });
   } catch (error) {
