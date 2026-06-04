@@ -225,9 +225,13 @@ app.post("/transfers", async (req, res) => {
   }
 });
 
-app.get("/transfers", async (req, res) => {
+ app.get("/transfers", auth, async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM transfers ORDER BY id DESC");
+    const result = await pool.query(
+      "SELECT * FROM transfers WHERE userEmail=$1 ORDER BY id DESC",
+      [req.user.email]
+    );
+
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch transfers" });
