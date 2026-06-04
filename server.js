@@ -228,7 +228,7 @@ app.post("/transfers", async (req, res) => {
  app.get("/transfers", auth, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM transfers WHERE userEmail=$1 ORDER BY id DESC",
+      "SELECT * FROM transfers WHERE user_email=$1 ORDER BY id DESC",
       [req.user.email]
     );
 
