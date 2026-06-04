@@ -34,7 +34,7 @@ const auth = (req, res, next) => {
 };
 
 const adminOnly = (req, res, next) => {
-  if (req.user.email !== "djmoe20@yahoo.com") {
+  if (req.user.email?.toLowerCase() !== "djmoe20@yahoo.com") {
     return res.status(403).json({ error: "Admin only" });
   }
 
