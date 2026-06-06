@@ -334,7 +334,7 @@ app.get("/admin/stats", auth, adminOnly, async (req, res) => {
     );
 
     const volume = await pool.query(
-  "SELECT COALESCE(SUM(amount),0) AS total FROM transfers"
+  "SELECT 0 AS total"
 );
 
     res.json({
