@@ -43,8 +43,11 @@ const adminOnly = (req, res, next) => {
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
+const isLocal = process.env.DATABASE_URL?.includes("localhost");
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
 });
 
 pool.connect()
@@ -322,17 +325,29 @@ app.post("/recipients", auth, async (req, res) => {
 
 app.get("/admin/stats", auth, adminOnly, async (req, res) => {
   try {
-    const users = await pool.query("SELECT COUNT(*) FROM users");
-    const transfers = await pool.query("SELECT COUNT(*) FROM transfers");
+    const users = await pool.query(
+      "SELECT COUNT(*) FROM users"
+    );
+
+    const transfers = await pool.query(
+      "SELECT COUNT(*) FROM transfers"
+    );
+
+    const volume = await pool.query(
+  "SELECT 0 AS total"
+);
 
     res.json({
       users: users.rows[0].count,
       transfers: transfers.rows[0].count,
-      volume: 0,
+      volume: volume.rows[0].total
     });
+
   } catch (error) {
-    console.log("Admin stats error:", error);
-    res.status(500).json({ error: "Failed to load admin stats" });
+    console.log("ADMIN STATS ERROR:", error);
+    res.status(500).json({
+      error: "Failed to load admin stats"
+    });
   }
 });
 
