@@ -42,11 +42,9 @@ const adminOnly = (req, res, next) => {
 };
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
 });
 
 pool.connect()
