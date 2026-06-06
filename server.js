@@ -323,17 +323,15 @@ app.post("/recipients", auth, async (req, res) => {
 app.get("/admin/stats", auth, adminOnly, async (req, res) => {
   try {
     const users = await pool.query("SELECT COUNT(*) FROM users");
-const transfers = await pool.query("SELECT COUNT(*) FROM transfers");
-const volume = await pool.query(
-  "SELECT COALESCE(SUM(amount),0) AS total FROM transfers"
-);
+    const transfers = await pool.query("SELECT COUNT(*) FROM transfers");
 
-res.json({
-  users: users.rows[0].count,
-  transfers: transfers.rows[0].count,
-  volume: volume.rows[0].total,
-});
+    res.json({
+      users: users.rows[0].count,
+      transfers: transfers.rows[0].count,
+      volume: 0,
+    });
   } catch (error) {
+    console.log("Admin stats error:", error);
     res.status(500).json({ error: "Failed to load admin stats" });
   }
 });
